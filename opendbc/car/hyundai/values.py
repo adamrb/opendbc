@@ -60,10 +60,10 @@ class HyundaiSafetyFlags(IntFlag):
   HYBRID_GAS = 2
   LONG = 4
   CAMERA_SCC = 8
-  CANFD_LKA_STEERING = 16
+  CANFD_LKA_STEER_MSG = 16
   CANFD_ALT_BUTTONS = 32
   ALT_LIMITS = 64
-  CANFD_LKA_STEERING_ALT = 128
+  CANFD_LKA_STEER_MSG_ALT = 128
   FCEV_GAS = 256
   ALT_LIMITS_2 = 512
 
@@ -71,21 +71,21 @@ class HyundaiSafetyFlags(IntFlag):
 class HyundaiFlags(IntFlag):
   # Dynamic Flags
 
-  # Default assumption: all cars use LFA (ADAS) steering from the camera.
-  # CANFD_LKA_STEERING/CANFD_LKA_STEERING_ALT cars typically have both LKA (camera) and LFA (ADAS) steering messages,
+  # Default assumption: all cars use LFA (ADAS) steering from the camera (HDA1).
+  # CANFD_LKA_STEER_MSG/CANFD_LKA_STEER_MSG_ALT cars typically have both LKA (camera) and LFA (ADAS) steering messages,
   # with LKA commands forwarded to the ADAS DRV ECU.
   # Most HDA2 trims are assumed to be equipped with the ADAS DRV ECU, though some variants may not be equipped with one.
-  CANFD_LKA_STEERING = 1
+  CANFD_LKA_STEER_MSG = 1
   CANFD_ALT_BUTTONS = 2
   CANFD_ALT_GEARS = 2 ** 2
   CANFD_CAMERA_SCC = 2 ** 3
 
   ALT_LIMITS = 2 ** 4
-  ENABLE_BLINKERS = 2 ** 5
+  CANFD_ENABLE_BLINKERS = 2 ** 5
   CANFD_ALT_GEARS_2 = 2 ** 6
   SEND_LFA = 2 ** 7
   USE_FCA = 2 ** 8
-  CANFD_LKA_STEERING_ALT = 2 ** 9
+  CANFD_LKA_STEER_MSG_ALT = 2 ** 9
 
   # these cars use a different gas signal
   HYBRID = 2 ** 10
@@ -438,7 +438,7 @@ class CAR(Platforms):
     flags=HyundaiFlags.HYBRID,
   )
   KIA_NIRO_HEV_2ND_GEN = HyundaiCanFDPlatformConfig(
-    [HyundaiCarDocs("Kia Niro Hybrid 2023", car_parts=CarParts.common([CarHarness.hyundai_a]))],
+    [HyundaiCarDocs("Kia Niro Hybrid 2023-24", car_parts=CarParts.common([CarHarness.hyundai_a]))],
     KIA_NIRO_EV.specs,
   )
   KIA_OPTIMA_G4 = HyundaiPlatformConfig(
@@ -713,13 +713,11 @@ FW_QUERY_CONFIG = FwQueryConfig(
       [HYUNDAI_VERSION_REQUEST_LONG],
       [HYUNDAI_VERSION_RESPONSE],
       bus=0,
-      auxiliary=True,
     ),
     Request(
       [HYUNDAI_VERSION_REQUEST_LONG],
       [HYUNDAI_VERSION_RESPONSE],
       bus=1,
-      auxiliary=True,
       obd_multiplexing=False,
     ),
 
@@ -729,7 +727,6 @@ FW_QUERY_CONFIG = FwQueryConfig(
       [HYUNDAI_ECU_MANUFACTURING_DATE],
       [HYUNDAI_VERSION_RESPONSE],
       bus=0,
-      auxiliary=True,
       logging=True,
     ),
 
@@ -738,14 +735,12 @@ FW_QUERY_CONFIG = FwQueryConfig(
       [HYUNDAI_VERSION_REQUEST_ALT],
       [HYUNDAI_VERSION_RESPONSE],
       bus=0,
-      auxiliary=True,
       logging=True,
     ),
     Request(
       [HYUNDAI_VERSION_REQUEST_ALT],
       [HYUNDAI_VERSION_RESPONSE],
       bus=1,
-      auxiliary=True,
       logging=True,
       obd_multiplexing=False,
     ),
@@ -780,9 +775,6 @@ CAN_GEARS = {
 }
 
 CANFD_CAR = CAR.with_flags(HyundaiFlags.CANFD)
-CANFD_RADAR_SCC_CAR = CAR.with_flags(HyundaiFlags.RADAR_SCC)  # TODO: merge with UNSUPPORTED_LONGITUDINAL_CAR
-
-CANFD_UNSUPPORTED_LONGITUDINAL_CAR = CAR.with_flags(HyundaiFlags.CANFD_NO_RADAR_DISABLE)  # TODO: merge with UNSUPPORTED_LONGITUDINAL_CAR
 
 CAMERA_SCC_CAR = CAR.with_flags(HyundaiFlags.CAMERA_SCC)
 
@@ -792,8 +784,9 @@ EV_CAR = CAR.with_flags(HyundaiFlags.EV)
 
 LEGACY_SAFETY_MODE_CAR = CAR.with_flags(HyundaiFlags.LEGACY)
 
-# TODO: another PR with (HyundaiFlags.LEGACY | HyundaiFlags.UNSUPPORTED_LONGITUDINAL | HyundaiFlags.CAMERA_SCC |
-#       HyundaiFlags.CANFD_RADAR_SCC | HyundaiFlags.CANFD_NO_RADAR_DISABLE | )
-UNSUPPORTED_LONGITUDINAL_CAR = CAR.with_flags(HyundaiFlags.LEGACY) | CAR.with_flags(HyundaiFlags.UNSUPPORTED_LONGITUDINAL)
+UNSUPPORTED_LONGITUDINAL_CAR = {
+  "legacy": CAR.with_flags(HyundaiFlags.LEGACY),
+  "can": CAR.with_flags(HyundaiFlags.UNSUPPORTED_LONGITUDINAL),
+}
 
 DBC = CAR.create_dbc_map()
