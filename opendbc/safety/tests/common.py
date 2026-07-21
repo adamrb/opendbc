@@ -1005,6 +1005,9 @@ class SafetyTest(SafetyTestBase):
               continue
             if attr.startswith('TestToyota') and current_test.startswith('TestToyota'):
               continue
+            # Jeep brake hold shares the Chrysler/Pacifica safety mode, only adding DAS_3
+            if {attr, current_test}.issubset({'TestChryslerSafety', 'TestChryslerJeepBrakeHoldSafety'}):
+              continue
             if attr.startswith('TestSubaruGen') and current_test.startswith('TestSubaruGen'):
               continue
             if attr.startswith('TestSubaruPreglobal') and current_test.startswith('TestSubaruPreglobal'):

@@ -4,17 +4,21 @@ from opendbc.car.chrysler.values import CUSW_CARS, DBC, STEER_THRESHOLD, RAM_CAR
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.interfaces import CarStateBase
 
+from opendbc.sunnypilot.car.chrysler.brake_hold import BrakeHoldCarState
 from opendbc.sunnypilot.car.chrysler.carstate_ext import CarStateExt
 from opendbc.sunnypilot.car.chrysler.mads import MadsCarState
 
 ButtonType = structs.CarState.ButtonEvent.Type
 
+SPEED_1_SNA = 0xFFF * 0.071028  # m/s, raw max means signal not available
 
-class CarState(CarStateBase, MadsCarState, CarStateExt):
+
+class CarState(CarStateBase, MadsCarState, CarStateExt, BrakeHoldCarState):
   def __init__(self, CP, CP_SP):
     CarStateBase.__init__(self, CP, CP_SP)
     MadsCarState.__init__(self, CP, CP_SP)
     CarStateExt.__init__(self, CP, CP_SP)
+    BrakeHoldCarState.__init__(self, CP, CP_SP)
     self.CP = CP
     can_define = CANDefine(DBC[CP.carFingerprint][Bus.pt])
 
@@ -28,6 +32,7 @@ class CarState(CarStateBase, MadsCarState, CarStateExt):
       self.shifter_values = can_define.dv["GEAR"]["PRNDL"]
 
     self.distance_button = 0
+    self.v_ego_raw_last = 0.
 
   def update(self, can_parsers) -> tuple[structs.CarState, structs.CarStateSP]:
     cp = can_parsers[Bus.pt]
@@ -60,7 +65,12 @@ class CarState(CarStateBase, MadsCarState, CarStateExt):
       ret.vEgoRaw = cp.vl["ESP_8"]["Vehicle_Speed"] * CV.KPH_TO_MS
       ret.gearShifter = self.parse_gear_shifter(self.shifter_values.get(cp.vl["Transmission_Status"]["Gear_State"], None))
     else:
-      ret.vEgoRaw = (cp.vl["SPEED_1"]["SPEED_LEFT"] + cp.vl["SPEED_1"]["SPEED_RIGHT"]) / 2.
+      # the ESC briefly broadcasts SNA on its speed signals (~0.2s bursts seen on a
+      # 2018 Grand Cherokee); hold the last valid speed instead of reading 290 m/s
+      speed_left, speed_right = cp.vl["SPEED_1"]["SPEED_LEFT"], cp.vl["SPEED_1"]["SPEED_RIGHT"]
+      if max(speed_left, speed_right) < SPEED_1_SNA:
+        self.v_ego_raw_last = (speed_left + speed_right) / 2.
+      ret.vEgoRaw = self.v_ego_raw_last
       ret.gearShifter = self.parse_gear_shifter(self.shifter_values.get(cp.vl["GEAR"]["PRNDL"], None))
     ret.vEgo, ret.aEgo = self.update_speed_kf(ret.vEgoRaw)
     ret.standstill = not ret.vEgoRaw > 0.001
@@ -105,6 +115,7 @@ class CarState(CarStateBase, MadsCarState, CarStateExt):
 
     MadsCarState.update_mads(self, ret, can_parsers)
     CarStateExt.update(self, ret, ret_sp, can_parsers)
+    BrakeHoldCarState.update_brake_hold(self, ret, can_parsers)
 
     ret.buttonEvents = [
       *create_button_events(self.distance_button, prev_distance_button, {1: ButtonType.gapAdjustCruise}),

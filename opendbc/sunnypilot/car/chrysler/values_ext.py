@@ -9,6 +9,7 @@ from collections import namedtuple
 from enum import IntFlag
 
 from opendbc.car import structs
+from opendbc.car.chrysler.values import CAR
 
 ButtonType = structs.CarState.ButtonEvent.Type
 Button = namedtuple('Button', ['event_type', 'can_addr', 'can_msg', 'values'])
@@ -20,6 +21,14 @@ BUTTONS = [
   Button(ButtonType.resumeCruise, "CRUISE_BUTTONS", "ACC_Resume", [1]),
 ]
 
+# Jeep platforms without factory stop-and-go, eligible for the brake hold workaround
+JEEPS = {CAR.JEEP_GRAND_CHEROKEE, CAR.JEEP_GRAND_CHEROKEE_2019}
+
+
+class ChryslerSafetyFlagsSP:
+  JEEP_BRAKE_HOLD = 1
+
 
 class ChryslerFlagsSP(IntFlag):
   NO_MIN_STEERING_SPEED = 1
+  JEEP_BRAKE_HOLD = 2

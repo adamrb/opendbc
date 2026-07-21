@@ -5,18 +5,20 @@ from opendbc.car.chrysler import chryslercan
 from opendbc.car.chrysler.values import CUSW_CARS, RAM_CARS, CarControllerParams, ChryslerFlags, RAM_DT
 from opendbc.car.interfaces import CarControllerBase
 
+from opendbc.sunnypilot.car.chrysler.brake_hold import BrakeHoldCarController
 from opendbc.sunnypilot.car.chrysler.carcontroller_ext import CarControllerExt
 from opendbc.sunnypilot.car.chrysler.icbm import IntelligentCruiseButtonManagementInterface
 from opendbc.sunnypilot.car.chrysler.mads import MadsCarController
 from opendbc.sunnypilot.car.chrysler.values_ext import ChryslerFlagsSP
 
 
-class CarController(CarControllerBase, MadsCarController, CarControllerExt, IntelligentCruiseButtonManagementInterface):
+class CarController(CarControllerBase, MadsCarController, CarControllerExt, IntelligentCruiseButtonManagementInterface, BrakeHoldCarController):
   def __init__(self, dbc_names, CP, CP_SP):
     CarControllerBase.__init__(self, dbc_names, CP, CP_SP)
     MadsCarController.__init__(self)
     CarControllerExt.__init__(self, CP, CP_SP)
     IntelligentCruiseButtonManagementInterface.__init__(self, CP, CP_SP)
+    BrakeHoldCarController.__init__(self, CP, CP_SP)
     self.apply_torque_last = 0
 
     self.hud_count = 0
@@ -34,9 +36,15 @@ class CarController(CarControllerBase, MadsCarController, CarControllerExt, Inte
     lkas_active = CC.latActive and self.lkas_control_bit_prev
 
     # cruise buttons
-    if (self.frame - self.last_button_frame) * DT_CTRL > 0.05:
-      das_bus = 2 if self.CP.carFingerprint in RAM_CARS else 0
+    das_bus = 2 if self.CP.carFingerprint in RAM_CARS else 0
 
+    # in brake hold states, all button traffic goes through the brake hold
+    # controller (column-counter paced, at most one press per tick)
+    brake_hold_state = self.brake_hold_enabled and (CS.brake_hold or CS.brake_hold_pending)
+
+    if brake_hold_state:
+      can_sends.extend(BrakeHoldCarController.cruise_buttons(self, self.packer, CC, CS, das_bus))
+    elif (self.frame - self.last_button_frame) * DT_CTRL > 0.05:
       # ACC cancellation
       if CC.cruiseControl.cancel:
         self.last_button_frame = self.frame
@@ -92,8 +100,14 @@ class CarController(CarControllerBase, MadsCarController, CarControllerExt, Inte
     if self.frame % 10 == 0 and self.CP.carFingerprint not in (RAM_CARS | CUSW_CARS):
       can_sends.append(MadsCarController.create_lkas_heartbit(self.packer, CS.lkas_heartbit, self.mads))
 
-    # Intelligent Cruise Button Management
-    can_sends.extend(IntelligentCruiseButtonManagementInterface.update(self, CS, CC_SP, self.packer, self.frame, self.last_button_frame))
+    # Intelligent Cruise Button Management — suppressed in brake hold states:
+    # ICBM accel/decel presses alongside brake hold's cancel/resume are the
+    # contradictory-button pattern that hard-faults the DASM
+    if not brake_hold_state:
+      can_sends.extend(IntelligentCruiseButtonManagementInterface.update(self, CS, CC_SP, self.packer, self.frame, self.last_button_frame))
+
+    # Jeep brake hold
+    can_sends.extend(BrakeHoldCarController.create_brake_hold(self, self.packer, CC, CS, self.frame))
 
     self.frame += 1
 
